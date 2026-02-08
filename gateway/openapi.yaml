@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: API Gateway - Eventos
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000
+paths:
+  /api:
+    get:
+      summary: Root com HATEOAS
+      responses:
+        "200":
+          description: Links principais
+  /api/events:
+    get:
+      summary: Lista eventos
+      responses:
+        "200":
+          description: Lista de eventos com links
+    post:
+      summary: Cria evento
+      responses:
+        "201":
+          description: Evento criado
+  /api/events/{id}:
+    get:
+      summary: Detalhe de evento
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Evento encontrado
+        "404":
+          description: Evento nao encontrado
+  /api/checkins:
+    get:
+      summary: Lista check-ins
+      parameters:
+        - name: eventId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista de check-ins
+    post:
+      summary: Cria check-in
+      responses:
+        "201":
+          description: Check-in criado
+  /api/legacy/events/{id}:
+    get:
+      summary: Evento legado via SOAP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Evento legado
