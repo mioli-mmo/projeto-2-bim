@@ -102,6 +102,16 @@ body::before {
   color: var(--muted);
 }
 
+.ws-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ws-status span {
+  color: #d1442c;
+}
+
 .hero-card {
   background: var(--panel);
   border-radius: 24px;
@@ -291,6 +301,28 @@ button:disabled {
 }
 
 .checkin-row span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alert-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff2df;
+  border: 1px solid #ffd8b5;
+}
+
+.alert-row span {
   color: var(--muted);
   font-size: 0.85rem;
 }

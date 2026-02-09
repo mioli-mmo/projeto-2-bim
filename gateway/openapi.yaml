@@ -2,6 +2,12 @@ openapi: 3.0.3
 info:
   title: API Gateway - Eventos
   version: 1.0.0
+  description: |
+    Documentacao do Gateway REST.
+    
+    WebSocket (Etapa 2):
+    - Endpoint: ws://localhost:4000/ws/checkins
+    - Envia mensagens JSON com eventos de check-in em tempo real.
 servers:
   - url: http://localhost:4000
 paths:

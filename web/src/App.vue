@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 
 const baseUrl = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:4000'
 
@@ -8,6 +8,9 @@ const checkins = ref([])
 const selectedEventId = ref('')
 const attendeeName = ref('')
 const legacyEvent = ref(null)
+const liveAlerts = ref([])
+const wsStatus = ref('desconectado')
+const wsError = ref('')
 
 const loading = ref(false)
 const error = ref('')
@@ -15,6 +18,11 @@ const checkinsLoading = ref(false)
 const checkinsError = ref('')
 const legacyLoading = ref(false)
 const legacyError = ref('')
+let wsClient = null
+
+const wsUrl = computed(() => {
+  return baseUrl.replace(/^http/, 'ws') + '/ws/checkins'
+})
 
 const selectedEvent = computed(() =>
   events.value.find((item) => item.id === selectedEventId.value)
@@ -104,7 +112,49 @@ const loadLegacy = async () => {
   }
 }
 
-onMounted(loadEvents)
+const connectWebSocket = () => {
+  wsError.value = ''
+  wsStatus.value = 'conectando'
+  wsClient = new WebSocket(wsUrl.value)
+
+  wsClient.onopen = () => {
+    wsStatus.value = 'conectado'
+  }
+
+  wsClient.onclose = () => {
+    wsStatus.value = 'desconectado'
+  }
+
+  wsClient.onerror = () => {
+    wsError.value = 'Falha na conexao WebSocket.'
+  }
+
+  wsClient.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data)
+      if (payload.type === 'checkin' && payload.data) {
+        const alertMessage = `Novo check-in: ${payload.data.attendeeName} em ${payload.data.eventId}.`
+        liveAlerts.value = [
+          { id: payload.data.id, message: alertMessage, time: payload.data.timestamp },
+          ...liveAlerts.value
+        ].slice(0, 8)
+      }
+    } catch (err) {
+      wsError.value = 'Mensagem WebSocket invalida.'
+    }
+  }
+}
+
+onMounted(() => {
+  loadEvents()
+  connectWebSocket()
+})
+
+onBeforeUnmount(() => {
+  if (wsClient) {
+    wsClient.close()
+  }
+})
 </script>
 
 <template>
@@ -123,6 +173,10 @@ onMounted(loadEvents)
           </button>
           <span class="status">Gateway: {{ baseUrl }}</span>
         </div>
+        <p class="ws-status">
+          WebSocket: {{ wsStatus }}
+          <span v-if="wsError">({{ wsError }})</span>
+        </p>
       </div>
       <div class="hero-card">
         <p class="label">Resumo rapido</p>
@@ -214,6 +268,23 @@ onMounted(loadEvents)
           </div>
         </div>
         <p v-else class="muted">Nenhum check-in para este evento.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Alertas ao vivo</h2>
+          <p>Mensagens em tempo real para cada check-in.</p>
+        </div>
+        <div v-if="liveAlerts.length" class="alerts">
+          <div v-for="alert in liveAlerts" :key="alert.id" class="alert-row">
+            <div>
+              <strong>{{ alert.message }}</strong>
+              <span>{{ new Date(alert.time).toLocaleString() }}</span>
+            </div>
+            <span class="pill">novo</span>
+          </div>
+        </div>
+        <p v-else class="muted">Aguardando alertas...</p>
       </section>
     </main>
   </div>

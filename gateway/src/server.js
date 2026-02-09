@@ -1,9 +1,12 @@
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const soap = require("soap");
+const { WebSocketServer } = require("ws");
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 4000;
 
 const restEventsUrl = process.env.REST_EVENTS_URL || "http://localhost:4001";
@@ -29,18 +32,36 @@ const addLinks = (baseUrl, resource, links) => {
   };
 };
 
+const wss = new WebSocketServer({ server, path: "/ws/checkins" });
+
+const broadcastJson = (payload) => {
+  const message = JSON.stringify(payload);
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  });
+};
+
+wss.on("connection", (ws) => {
+  ws.send(JSON.stringify({ type: "welcome", message: "connected" }));
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
 app.get("/api", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const wsProtocol = req.secure ? "wss" : "ws";
+  const wsBaseUrl = `${wsProtocol}://${req.get("host")}`;
   res.json({
     _links: {
       self: { href: `${baseUrl}/api` },
       events: { href: `${baseUrl}/api/events` },
       checkins: { href: `${baseUrl}/api/checkins` },
-      legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` }
+      legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` },
+      wsCheckins: { href: `${wsBaseUrl}/ws/checkins` }
     }
   });
 });
@@ -129,12 +150,12 @@ app.post("/api/checkins", async (req, res) => {
   try {
     const response = await axios.post(`${restCheckinsUrl}/checkins`, req.body);
     const baseUrl = `${req.protocol}://${req.get("host")}`;
-    return res.status(201).json(
-      addLinks(baseUrl, response.data, {
-        self: { href: `${baseUrl}/api/checkins?eventId=${response.data.eventId}` },
-        event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
-      })
-    );
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/checkins?eventId=${response.data.eventId}` },
+      event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
+    });
+    broadcastJson({ type: "checkin", data: payload });
+    return res.status(201).json(payload);
   } catch (error) {
     if (error.response && error.response.status === 400) {
       return res.status(400).json({ error: "missing_fields" });
@@ -159,6 +180,6 @@ app.get("/api/legacy/events/:id", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`gateway running on port ${port}`);
 });
