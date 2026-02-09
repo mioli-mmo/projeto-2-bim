@@ -349,6 +349,21 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.grpc-result {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #f1f8f0;
+  border: 1px solid #cfe7c7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grpc-result span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

@@ -1,4 +1,5 @@
 const http = require("http");
+const path = require("path");
 const dgram = require("dgram");
 const net = require("net");
 const express = require("express");
@@ -7,6 +8,8 @@ const axios = require("axios");
 const soap = require("soap");
 const { WebSocketServer } = require("ws");
 const amqp = require("amqplib");
+const grpc = require("@grpc/grpc-js");
+const protoLoader = require("@grpc/proto-loader");
 
 const app = express();
 const server = http.createServer(app);
@@ -20,18 +23,48 @@ const rabbitQueue = process.env.RMQ_QUEUE || "events.created";
 const telemetryHost = process.env.TELEMETRY_HOST || "127.0.0.1";
 const telemetryUdpPort = process.env.TELEMETRY_UDP_PORT || 7001;
 const telemetryTcpPort = process.env.TELEMETRY_TCP_PORT || 7002;
+const grpcHost = process.env.GRPC_HOST || "localhost";
+const grpcPort = process.env.GRPC_PORT || "50051";
 
 app.use(cors());
 app.use(express.json());
 
 let soapClientPromise = null;
 let rabbitChannelPromise = null;
+let grpcClient = null;
 
 const getSoapClient = () => {
   if (!soapClientPromise) {
     soapClientPromise = soap.createClientAsync(soapWsdlUrl);
   }
   return soapClientPromise;
+};
+
+const getGrpcClient = () => {
+  if (!grpcClient) {
+    const protoPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "services",
+      "grpc",
+      "proto",
+      "checkin.proto"
+    );
+    const packageDefinition = protoLoader.loadSync(protoPath, {
+      keepCase: true,
+      longs: String,
+      enums: String,
+      defaults: true,
+      oneofs: true
+    });
+    const proto = grpc.loadPackageDefinition(packageDefinition).checkin;
+    grpcClient = new proto.TicketService(
+      `${grpcHost}:${grpcPort}`,
+      grpc.credentials.createInsecure()
+    );
+  }
+  return grpcClient;
 };
 
 const addLinks = (baseUrl, resource, links) => {
@@ -129,7 +162,8 @@ app.get("/api", (req, res) => {
       events: { href: `${baseUrl}/api/events` },
       checkins: { href: `${baseUrl}/api/checkins` },
       legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` },
-      wsCheckins: { href: `${wsBaseUrl}/ws/checkins` }
+      wsCheckins: { href: `${wsBaseUrl}/ws/checkins` },
+      validateTicket: { href: `${baseUrl}/api/tickets/validate`, method: "POST" }
     }
   });
 });
@@ -262,6 +296,24 @@ app.get("/api/legacy/events/:id", async (req, res) => {
     );
   } catch (error) {
     return res.status(502).json({ error: "soap_service_unavailable" });
+  }
+});
+
+app.post("/api/tickets/validate", (req, res) => {
+  const { ticketId, eventId } = req.body || {};
+  if (!ticketId || !eventId) {
+    return res.status(400).json({ error: "missing_fields" });
+  }
+  try {
+    const client = getGrpcClient();
+    client.ValidateTicket({ ticketId, eventId }, (err, response) => {
+      if (err) {
+        return res.status(502).json({ error: "grpc_unavailable" });
+      }
+      return res.json(response);
+    });
+  } catch (error) {
+    return res.status(502).json({ error: "grpc_unavailable" });
   }
 });
 

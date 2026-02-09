@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package checkin;
+
+service TicketService {
+  rpc ValidateTicket (TicketRequest) returns (TicketReply);
+}
+
+message TicketRequest {
+  string ticketId = 1;
+  string eventId = 2;
+}
+
+message TicketReply {
+  bool valid = 1;
+  string message = 2;
+}

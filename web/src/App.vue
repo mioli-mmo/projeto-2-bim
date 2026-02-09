@@ -11,6 +11,11 @@ const legacyEvent = ref(null)
 const liveAlerts = ref([])
 const eventAlerts = ref([])
 const tcpUdpLogs = ref([])
+const grpcTicketId = ref('TCK-123')
+const grpcEventId = ref('')
+const grpcResult = ref(null)
+const grpcLoading = ref(false)
+const grpcError = ref('')
 const wsStatus = ref('desconectado')
 const wsError = ref('')
 
@@ -46,12 +51,38 @@ const loadEvents = async () => {
     events.value = data.items || []
     if (!selectedEventId.value && events.value.length) {
       selectedEventId.value = events.value[0].id
+      if (!grpcEventId.value) {
+        grpcEventId.value = selectedEventId.value
+      }
       await loadCheckins(selectedEventId.value)
     }
   } catch (err) {
     error.value = 'Nao foi possivel carregar eventos.'
   } finally {
     loading.value = false
+  }
+}
+
+const validateTicket = async () => {
+  grpcLoading.value = true
+  grpcError.value = ''
+  grpcResult.value = null
+  try {
+    const data = await requestJson(`${baseUrl}/api/tickets/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ticketId: grpcTicketId.value.trim(),
+        eventId: grpcEventId.value.trim()
+      })
+    })
+    grpcResult.value = data
+  } catch (err) {
+    grpcError.value = 'Falha ao validar ticket via gRPC.'
+  } finally {
+    grpcLoading.value = false
   }
 }
 
@@ -268,6 +299,31 @@ onBeforeUnmount(() => {
             Registrar check-in
           </button>
           <p v-if="checkinsError" class="error">{{ checkinsError }}</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Validar ticket (gRPC)</h2>
+          <p>Chamada via Gateway para o servidor gRPC em Python.</p>
+        </div>
+        <div class="form">
+          <label>
+            Ticket ID
+            <input v-model="grpcTicketId" type="text" placeholder="TCK-123" />
+          </label>
+          <label>
+            Evento ID
+            <input v-model="grpcEventId" type="text" placeholder="evt-1" />
+          </label>
+          <button class="primary" @click="validateTicket" :disabled="grpcLoading">
+            Validar ticket
+          </button>
+          <p v-if="grpcError" class="error">{{ grpcError }}</p>
+          <div v-if="grpcResult" class="grpc-result">
+            <strong>{{ grpcResult.message }}</strong>
+            <span>Status: {{ grpcResult.valid ? 'valido' : 'invalido' }}</span>
+          </div>
         </div>
       </section>
 
