@@ -1,25 +1,71 @@
+const http = require("http");
+const path = require("path");
+const dgram = require("dgram");
+const net = require("net");
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const soap = require("soap");
+const { WebSocketServer } = require("ws");
+const amqp = require("amqplib");
+const grpc = require("@grpc/grpc-js");
+const protoLoader = require("@grpc/proto-loader");
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 4000;
 
 const restEventsUrl = process.env.REST_EVENTS_URL || "http://localhost:4001";
 const restCheckinsUrl = process.env.REST_CHECKINS_URL || "http://localhost:4002";
 const soapWsdlUrl = process.env.SOAP_WSDL_URL || "http://localhost:5000/?wsdl";
+const rabbitUrl = process.env.RMQ_URL || "amqp://localhost";
+const rabbitQueueEvents = process.env.RMQ_QUEUE || "events.created";
+const rabbitQueueCheckins = process.env.RMQ_QUEUE_CHECKINS || "checkins.updated";
+const telemetryHost = process.env.TELEMETRY_HOST || "127.0.0.1";
+const telemetryUdpPort = process.env.TELEMETRY_UDP_PORT || 7001;
+const telemetryTcpPort = process.env.TELEMETRY_TCP_PORT || 7002;
+const grpcHost = process.env.GRPC_HOST || "localhost";
+const grpcPort = process.env.GRPC_PORT || "50051";
 
 app.use(cors());
 app.use(express.json());
 
 let soapClientPromise = null;
+let rabbitChannelPromise = null;
+let grpcClient = null;
 
 const getSoapClient = () => {
   if (!soapClientPromise) {
     soapClientPromise = soap.createClientAsync(soapWsdlUrl);
   }
   return soapClientPromise;
+};
+
+const getGrpcClient = () => {
+  if (!grpcClient) {
+    const protoPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "services",
+      "grpc",
+      "proto",
+      "checkin.proto"
+    );
+    const packageDefinition = protoLoader.loadSync(protoPath, {
+      keepCase: true,
+      longs: String,
+      enums: String,
+      defaults: true,
+      oneofs: true
+    });
+    const proto = grpc.loadPackageDefinition(packageDefinition).checkin;
+    grpcClient = new proto.EntryService(
+      `${grpcHost}:${grpcPort}`,
+      grpc.credentials.createInsecure()
+    );
+  }
+  return grpcClient;
 };
 
 const addLinks = (baseUrl, resource, links) => {
@@ -29,18 +75,98 @@ const addLinks = (baseUrl, resource, links) => {
   };
 };
 
+const getRabbitChannel = async () => {
+  if (!rabbitChannelPromise) {
+    rabbitChannelPromise = amqp
+      .connect(rabbitUrl)
+      .then((connection) => connection.createChannel())
+      .then(async (channel) => {
+        await channel.assertQueue(rabbitQueueEvents, { durable: true });
+        await channel.assertQueue(rabbitQueueCheckins, { durable: true });
+        return channel;
+      })
+      .catch((error) => {
+        rabbitChannelPromise = null;
+        throw error;
+      });
+  }
+  return rabbitChannelPromise;
+};
+
+const wss = new WebSocketServer({ server, path: "/ws/checkins" });
+
+const broadcastJson = (payload) => {
+  const message = JSON.stringify(payload);
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  });
+};
+
+const sendUdpTelemetry = (message) => {
+  return new Promise((resolve) => {
+    const client = dgram.createSocket("udp4");
+    client.send(
+      Buffer.from(message),
+      telemetryUdpPort,
+      telemetryHost,
+      (error) => {
+        if (error) {
+          console.warn("udp telemetry failed", error.message || error);
+        }
+        client.close();
+        resolve();
+      }
+    );
+  });
+};
+
+const sendTcpTelemetry = (message) => {
+  return new Promise((resolve) => {
+    const client = net.createConnection(
+      { host: telemetryHost, port: telemetryTcpPort },
+      () => {
+        client.write(message + "\n");
+      }
+    );
+
+    client.on("data", () => {
+      client.end();
+    });
+
+    client.on("error", (error) => {
+      console.warn("tcp telemetry failed", error.message || error);
+      resolve();
+    });
+
+    client.on("close", () => {
+      resolve();
+    });
+  });
+};
+
+wss.on("connection", (ws) => {
+  ws.send(JSON.stringify({ type: "welcome", message: "connected" }));
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
 app.get("/api", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const wsProtocol = req.secure ? "wss" : "ws";
+  const wsBaseUrl = `${wsProtocol}://${req.get("host")}`;
   res.json({
     _links: {
       self: { href: `${baseUrl}/api` },
       events: { href: `${baseUrl}/api/events` },
       checkins: { href: `${baseUrl}/api/checkins` },
-      legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` }
+      updateCheckin: { href: `${baseUrl}/api/checkins/{id}`, method: "PATCH" },
+      legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` },
+      wsCheckins: { href: `${wsBaseUrl}/ws/checkins` },
+      validateEntry: { href: `${baseUrl}/api/entry/validate`, method: "POST" }
     }
   });
 });
@@ -88,12 +214,23 @@ app.post("/api/events", async (req, res) => {
   try {
     const response = await axios.post(`${restEventsUrl}/events`, req.body);
     const baseUrl = `${req.protocol}://${req.get("host")}`;
-    return res.status(201).json(
-      addLinks(baseUrl, response.data, {
-        self: { href: `${baseUrl}/api/events/${response.data.id}` },
-        checkins: { href: `${baseUrl}/api/checkins?eventId=${response.data.id}` }
-      })
-    );
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/events/${response.data.id}` },
+      checkins: { href: `${baseUrl}/api/checkins?eventId=${response.data.id}` }
+    });
+
+    try {
+      const channel = await getRabbitChannel();
+      channel.sendToQueue(rabbitQueueEvents, Buffer.from(JSON.stringify(payload)), {
+        persistent: true
+      });
+    } catch (error) {
+      console.warn("rabbitmq unavailable", error.message || error);
+    }
+
+    broadcastJson({ type: "event_created", data: payload });
+
+    return res.status(201).json(payload);
   } catch (error) {
     if (error.response && error.response.status === 400) {
       return res.status(400).json({ error: "missing_fields" });
@@ -129,15 +266,57 @@ app.post("/api/checkins", async (req, res) => {
   try {
     const response = await axios.post(`${restCheckinsUrl}/checkins`, req.body);
     const baseUrl = `${req.protocol}://${req.get("host")}`;
-    return res.status(201).json(
-      addLinks(baseUrl, response.data, {
-        self: { href: `${baseUrl}/api/checkins?eventId=${response.data.eventId}` },
-        event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
-      })
-    );
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/checkins?eventId=${response.data.eventId}` },
+      event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
+    });
+    const udpMessage = `RECEBIDO CHECKIN ${response.data.eventId} ${response.data.attendeeName}`;
+    const tcpMessage = `CONFIRMADO CHECKIN ${response.data.eventId} ${response.data.attendeeName}`;
+    await Promise.all([
+      sendUdpTelemetry(udpMessage),
+      sendTcpTelemetry(tcpMessage)
+    ]);
+    broadcastJson({ type: "ticket_purchased", data: payload });
+    return res.status(201).json(payload);
   } catch (error) {
     if (error.response && error.response.status === 400) {
       return res.status(400).json({ error: "missing_fields" });
+    }
+    return res.status(502).json({ error: "rest_checkins_unavailable" });
+  }
+});
+
+app.patch("/api/checkins/:id", async (req, res) => {
+  try {
+    const response = await axios.patch(
+      `${restCheckinsUrl}/checkins/${req.params.id}`,
+      req.body
+    );
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/checkins/${response.data.id}` },
+      event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
+    });
+
+    try {
+      const channel = await getRabbitChannel();
+      channel.sendToQueue(
+        rabbitQueueCheckins,
+        Buffer.from(JSON.stringify(payload)),
+        { persistent: true }
+      );
+    } catch (error) {
+      console.warn("rabbitmq unavailable", error.message || error);
+    }
+
+    broadcastJson({ type: "checkin_updated", data: payload });
+    return res.json(payload);
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      return res.status(404).json({ error: "checkin_not_found" });
+    }
+    if (error.response && error.response.status === 400) {
+      return res.status(400).json({ error: "invalid_status" });
     }
     return res.status(502).json({ error: "rest_checkins_unavailable" });
   }
@@ -159,6 +338,55 @@ app.get("/api/legacy/events/:id", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.post("/api/entry/validate", async (req, res) => {
+  const { checkinId } = req.body || {};
+  if (!checkinId) {
+    return res.status(400).json({ error: "missing_checkin_id" });
+  }
+  try {
+    // Buscar o check-in no serviço REST
+    const checkinResponse = await axios.get(`${restCheckinsUrl}/checkins/${checkinId}`);
+    const checkin = checkinResponse.data;
+    
+    // Enviar para gRPC validar a entrada
+    const client = getGrpcClient();
+    client.ValidateEntry(
+      {
+        checkinId: checkin.id,
+        status: checkin.status,
+        attendeeName: checkin.attendeeName,
+        eventId: checkin.eventId
+      },
+      (err, response) => {
+        if (err) {
+          return res.status(502).json({ error: "grpc_unavailable" });
+        }
+        return res.json(response);
+      }
+    );
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      return res.status(404).json({ error: "checkin_not_found" });
+    }
+    return res.status(502).json({ error: "service_unavailable" });
+  }
+});
+
+app.post("/api/telemetry/tcp-udp", (req, res) => {
+  const { protocol, payload, source } = req.body || {};
+  if (!protocol || !payload) {
+    return res.status(400).json({ error: "missing_fields" });
+  }
+  const message = {
+    protocol,
+    payload,
+    source: source || "unknown",
+    timestamp: new Date().toISOString()
+  };
+  broadcastJson({ type: "tcp_udp", data: message });
+  return res.status(202).json({ status: "accepted" });
+});
+
+server.listen(port, () => {
   console.log(`gateway running on port ${port}`);
 });

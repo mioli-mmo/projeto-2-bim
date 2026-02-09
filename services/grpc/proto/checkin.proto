@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package checkin;
+
+service EntryService {
+  rpc ValidateEntry (EntryRequest) returns (EntryReply);
+}
+
+message EntryRequest {
+  string checkinId = 1;
+  string status = 2;
+  string attendeeName = 3;
+  string eventId = 4;
+}
+
+message EntryReply {
+  bool allowed = 1;
+  string message = 2;
+  string reason = 3;
+}

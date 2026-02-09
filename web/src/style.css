@@ -102,6 +102,16 @@ body::before {
   color: var(--muted);
 }
 
+.ws-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ws-status span {
+  color: #d1442c;
+}
+
 .hero-card {
   background: var(--panel);
   border-radius: 24px;
@@ -111,6 +121,69 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.notifications-card {
+  max-height: 300px;
+  min-height: 200px;
+}
+
+.notifications-scroll {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 220px;
+  padding-right: 8px;
+}
+
+.notifications-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notifications-scroll::-webkit-scrollbar-track {
+  background: var(--soft);
+  border-radius: 3px;
+}
+
+.notifications-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.notifications-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.alerts-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alert-row-compact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff2df;
+  border: 1px solid #ffd8b5;
+  font-size: 0.85rem;
+}
+
+.alert-row-compact strong {
+  font-size: 0.8rem;
+  display: block;
+}
+
+.alert-row-compact span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.alert-row-compact .pill {
+  font-size: 0.65rem;
+  padding: 2px 6px;
 }
 
 .label {
@@ -295,6 +368,74 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alert-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff2df;
+  border: 1px solid #ffd8b5;
+}
+
+.alert-row span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.telemetry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #eef6ff;
+  border: 1px solid #cfe5ff;
+}
+
+.telemetry-row span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.grpc-result {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #f1f8f0;
+  border: 1px solid #cfe7c7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grpc-result span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.grpc-result.entry-denied {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.grpc-result.entry-denied strong {
+  color: #dc2626;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -322,4 +463,89 @@ button:disabled {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* Status classes */
+.status-pending {
+  border-left: 4px solid #f59e0b;
+}
+
+.status-approved {
+  border-left: 4px solid #10b981;
+  background: #f0fdf4;
+}
+
+.status-rejected {
+  border-left: 4px solid #ef4444;
+  background: #fef2f2;
+}
+
+.pending-row {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+/* Action buttons */
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.approve-btn {
+  background: #10b981;
+  color: #fff;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.approve-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+.reject-btn {
+  background: #ef4444;
+  color: #fff;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.reject-btn:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+/* Success message */
+.success {
+  color: #059669;
+  margin: 0;
+}
+
+/* Metric small */
+.metric-small {
+  font-size: 0.9rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* Router link styles */
+a.ghost {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pill variants */
+.pill.ticket_purchased {
+  background: #fef3c7;
+  border-color: #fbbf24;
+}
+
+.pill.checkin_updated {
+  background: #d1fae5;
+  border-color: #34d399;
+}
+
+.pill.event_created {
+  background: #e0e7ff;
+  border-color: #818cf8;
 }

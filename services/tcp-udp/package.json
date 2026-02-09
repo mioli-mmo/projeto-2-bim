@@ -1,0 +1,11 @@
+{
+  "name": "tcp-udp-service",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "client:udp": "node src/udp-client.js",
+    "client:tcp": "node src/tcp-client.js"
+  }
+}

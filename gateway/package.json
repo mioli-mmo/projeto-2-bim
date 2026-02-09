@@ -7,9 +7,13 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.11.1",
+    "@grpc/proto-loader": "^0.7.13",
+    "amqplib": "^0.10.4",
     "axios": "^1.6.8",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "soap": "^1.1.6"
+    "soap": "^1.1.6",
+    "ws": "^8.17.0"
   }
 }
