@@ -2,16 +2,19 @@ syntax = "proto3";
 
 package checkin;
 
-service TicketService {
-  rpc ValidateTicket (TicketRequest) returns (TicketReply);
+service EntryService {
+  rpc ValidateEntry (EntryRequest) returns (EntryReply);
 }
 
-message TicketRequest {
-  string ticketId = 1;
-  string eventId = 2;
+message EntryRequest {
+  string checkinId = 1;
+  string status = 2;
+  string attendeeName = 3;
+  string eventId = 4;
 }
 
-message TicketReply {
-  bool valid = 1;
+message EntryReply {
+  bool allowed = 1;
   string message = 2;
+  string reason = 3;
 }

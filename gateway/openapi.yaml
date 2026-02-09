@@ -1,13 +1,21 @@
 openapi: 3.0.3
 info:
   title: API Gateway - Eventos
-  version: 1.0.0
+  version: 2.0.0
   description: |
-    Documentacao do Gateway REST.
+    Documentacao do Gateway REST integrando todas as 5 etapas DSD.
     
-    WebSocket (Etapa 2):
-    - Endpoint: ws://localhost:4000/ws/checkins
-    - Envia mensagens JSON com eventos de check-in em tempo real.
+    Etapa 1: SOAP + REST com HATEOAS
+    Etapa 2: WebSocket (ws://localhost:4000/ws/checkins)
+    Etapa 3: RabbitMQ (filas events.created e checkins.updated)
+    Etapa 4: TCP/UDP telemetria (portas 7001 UDP, 7002 TCP)
+    Etapa 5: gRPC validacao de tickets (Python server porta 50051)
+    
+    WebSocket mensagens:
+    - ticket_purchased: novo ingresso comprado
+    - checkin_updated: ingresso aprovado/recusado
+    - event_created: novo evento criado
+    - tcp_udp: telemetria recebida
 servers:
   - url: http://localhost:4000
 paths:
@@ -16,15 +24,29 @@ paths:
       summary: Root com HATEOAS
       responses:
         "200":
-          description: Links principais
+          description: Links principais da API
   /api/events:
     get:
       summary: Lista eventos
       responses:
         "200":
-          description: Lista de eventos com links
+          description: Lista de eventos com links HATEOAS
     post:
       summary: Cria evento
+      description: Publica no RabbitMQ e broadcast via WebSocket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                date:
+                  type: string
+                location:
+                  type: string
+              required: [name, date, location]
       responses:
         "201":
           description: Evento criado
@@ -44,23 +66,68 @@ paths:
           description: Evento nao encontrado
   /api/checkins:
     get:
-      summary: Lista check-ins
+      summary: Lista check-ins (ingressos)
       parameters:
         - name: eventId
           in: query
           schema:
             type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
       responses:
         "200":
           description: Lista de check-ins
     post:
-      summary: Cria check-in
+      summary: Compra ingresso (cria check-in pendente)
+      description: Envia telemetria TCP/UDP e broadcast via WebSocket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId:
+                  type: string
+                attendeeName:
+                  type: string
+              required: [eventId, attendeeName]
       responses:
         "201":
-          description: Check-in criado
+          description: Ingresso criado com status pending
+  /api/checkins/{id}:
+    patch:
+      summary: Aprova ou recusa ingresso
+      description: Publica no RabbitMQ e broadcast via WebSocket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [approved, rejected]
+              required: [status]
+      responses:
+        "200":
+          description: Check-in atualizado
+        "404":
+          description: Check-in nao encontrado
+        "400":
+          description: Status invalido
   /api/legacy/events/{id}:
     get:
       summary: Evento legado via SOAP
+      description: Chama servico SOAP Python (spyne)
       parameters:
         - name: id
           in: path
@@ -70,3 +137,60 @@ paths:
       responses:
         "200":
           description: Evento legado
+  /api/entry/validate:
+    post:
+      summary: Valida entrada no evento via gRPC
+      description: |
+        Busca o check-in pelo ID e envia para o servidor gRPC Python
+        validar se a entrada e permitida (status approved).
+        Fluxo: Gateway (Node.js) -> gRPC (Python)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkinId:
+                  type: string
+                  description: ID do check-in/ingresso (ex: chk-1)
+              required: [checkinId]
+      responses:
+        "200":
+          description: Resultado da validacao de entrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                    description: Se a entrada e permitida
+                  message:
+                    type: string
+                    description: Mensagem para exibir
+                  reason:
+                    type: string
+                    description: Motivo da decisao
+        "404":
+          description: Check-in nao encontrado
+  /api/telemetry/tcp-udp:
+    post:
+      summary: Recebe telemetria TCP/UDP
+      description: Broadcast via WebSocket para clientes conectados
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                protocol:
+                  type: string
+                  enum: [tcp, udp]
+                payload:
+                  type: string
+                source:
+                  type: string
+              required: [protocol, payload]
+      responses:
+        "202":
+          description: Telemetria aceita

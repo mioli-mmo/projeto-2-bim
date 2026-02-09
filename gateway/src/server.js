@@ -19,7 +19,8 @@ const restEventsUrl = process.env.REST_EVENTS_URL || "http://localhost:4001";
 const restCheckinsUrl = process.env.REST_CHECKINS_URL || "http://localhost:4002";
 const soapWsdlUrl = process.env.SOAP_WSDL_URL || "http://localhost:5000/?wsdl";
 const rabbitUrl = process.env.RMQ_URL || "amqp://localhost";
-const rabbitQueue = process.env.RMQ_QUEUE || "events.created";
+const rabbitQueueEvents = process.env.RMQ_QUEUE || "events.created";
+const rabbitQueueCheckins = process.env.RMQ_QUEUE_CHECKINS || "checkins.updated";
 const telemetryHost = process.env.TELEMETRY_HOST || "127.0.0.1";
 const telemetryUdpPort = process.env.TELEMETRY_UDP_PORT || 7001;
 const telemetryTcpPort = process.env.TELEMETRY_TCP_PORT || 7002;
@@ -59,7 +60,7 @@ const getGrpcClient = () => {
       oneofs: true
     });
     const proto = grpc.loadPackageDefinition(packageDefinition).checkin;
-    grpcClient = new proto.TicketService(
+    grpcClient = new proto.EntryService(
       `${grpcHost}:${grpcPort}`,
       grpc.credentials.createInsecure()
     );
@@ -80,7 +81,8 @@ const getRabbitChannel = async () => {
       .connect(rabbitUrl)
       .then((connection) => connection.createChannel())
       .then(async (channel) => {
-        await channel.assertQueue(rabbitQueue, { durable: true });
+        await channel.assertQueue(rabbitQueueEvents, { durable: true });
+        await channel.assertQueue(rabbitQueueCheckins, { durable: true });
         return channel;
       })
       .catch((error) => {
@@ -161,9 +163,10 @@ app.get("/api", (req, res) => {
       self: { href: `${baseUrl}/api` },
       events: { href: `${baseUrl}/api/events` },
       checkins: { href: `${baseUrl}/api/checkins` },
+      updateCheckin: { href: `${baseUrl}/api/checkins/{id}`, method: "PATCH" },
       legacyEvent: { href: `${baseUrl}/api/legacy/events/{id}` },
       wsCheckins: { href: `${wsBaseUrl}/ws/checkins` },
-      validateTicket: { href: `${baseUrl}/api/tickets/validate`, method: "POST" }
+      validateEntry: { href: `${baseUrl}/api/entry/validate`, method: "POST" }
     }
   });
 });
@@ -218,7 +221,7 @@ app.post("/api/events", async (req, res) => {
 
     try {
       const channel = await getRabbitChannel();
-      channel.sendToQueue(rabbitQueue, Buffer.from(JSON.stringify(payload)), {
+      channel.sendToQueue(rabbitQueueEvents, Buffer.from(JSON.stringify(payload)), {
         persistent: true
       });
     } catch (error) {
@@ -273,11 +276,47 @@ app.post("/api/checkins", async (req, res) => {
       sendUdpTelemetry(udpMessage),
       sendTcpTelemetry(tcpMessage)
     ]);
-    broadcastJson({ type: "checkin", data: payload });
+    broadcastJson({ type: "ticket_purchased", data: payload });
     return res.status(201).json(payload);
   } catch (error) {
     if (error.response && error.response.status === 400) {
       return res.status(400).json({ error: "missing_fields" });
+    }
+    return res.status(502).json({ error: "rest_checkins_unavailable" });
+  }
+});
+
+app.patch("/api/checkins/:id", async (req, res) => {
+  try {
+    const response = await axios.patch(
+      `${restCheckinsUrl}/checkins/${req.params.id}`,
+      req.body
+    );
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/checkins/${response.data.id}` },
+      event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
+    });
+
+    try {
+      const channel = await getRabbitChannel();
+      channel.sendToQueue(
+        rabbitQueueCheckins,
+        Buffer.from(JSON.stringify(payload)),
+        { persistent: true }
+      );
+    } catch (error) {
+      console.warn("rabbitmq unavailable", error.message || error);
+    }
+
+    broadcastJson({ type: "checkin_updated", data: payload });
+    return res.json(payload);
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      return res.status(404).json({ error: "checkin_not_found" });
+    }
+    if (error.response && error.response.status === 400) {
+      return res.status(400).json({ error: "invalid_status" });
     }
     return res.status(502).json({ error: "rest_checkins_unavailable" });
   }
@@ -299,21 +338,37 @@ app.get("/api/legacy/events/:id", async (req, res) => {
   }
 });
 
-app.post("/api/tickets/validate", (req, res) => {
-  const { ticketId, eventId } = req.body || {};
-  if (!ticketId || !eventId) {
-    return res.status(400).json({ error: "missing_fields" });
+app.post("/api/entry/validate", async (req, res) => {
+  const { checkinId } = req.body || {};
+  if (!checkinId) {
+    return res.status(400).json({ error: "missing_checkin_id" });
   }
   try {
+    // Buscar o check-in no serviço REST
+    const checkinResponse = await axios.get(`${restCheckinsUrl}/checkins/${checkinId}`);
+    const checkin = checkinResponse.data;
+    
+    // Enviar para gRPC validar a entrada
     const client = getGrpcClient();
-    client.ValidateTicket({ ticketId, eventId }, (err, response) => {
-      if (err) {
-        return res.status(502).json({ error: "grpc_unavailable" });
+    client.ValidateEntry(
+      {
+        checkinId: checkin.id,
+        status: checkin.status,
+        attendeeName: checkin.attendeeName,
+        eventId: checkin.eventId
+      },
+      (err, response) => {
+        if (err) {
+          return res.status(502).json({ error: "grpc_unavailable" });
+        }
+        return res.json(response);
       }
-      return res.json(response);
-    });
+    );
   } catch (error) {
-    return res.status(502).json({ error: "grpc_unavailable" });
+    if (error.response && error.response.status === 404) {
+      return res.status(404).json({ error: "checkin_not_found" });
+    }
+    return res.status(502).json({ error: "service_unavailable" });
   }
 });
 

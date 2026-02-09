@@ -30,7 +30,7 @@ if _version_not_supported:
     )
 
 
-class TicketServiceStub(object):
+class EntryServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -39,42 +39,42 @@ class TicketServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.ValidateTicket = channel.unary_unary(
-                '/checkin.TicketService/ValidateTicket',
-                request_serializer=checkin__pb2.TicketRequest.SerializeToString,
-                response_deserializer=checkin__pb2.TicketReply.FromString,
+        self.ValidateEntry = channel.unary_unary(
+                '/checkin.EntryService/ValidateEntry',
+                request_serializer=checkin__pb2.EntryRequest.SerializeToString,
+                response_deserializer=checkin__pb2.EntryReply.FromString,
                 _registered_method=True)
 
 
-class TicketServiceServicer(object):
+class EntryServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def ValidateTicket(self, request, context):
+    def ValidateEntry(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_TicketServiceServicer_to_server(servicer, server):
+def add_EntryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'ValidateTicket': grpc.unary_unary_rpc_method_handler(
-                    servicer.ValidateTicket,
-                    request_deserializer=checkin__pb2.TicketRequest.FromString,
-                    response_serializer=checkin__pb2.TicketReply.SerializeToString,
+            'ValidateEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateEntry,
+                    request_deserializer=checkin__pb2.EntryRequest.FromString,
+                    response_serializer=checkin__pb2.EntryReply.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'checkin.TicketService', rpc_method_handlers)
+            'checkin.EntryService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class TicketService(object):
+class EntryService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def ValidateTicket(request,
+    def ValidateEntry(request,
             target,
             options=(),
             channel_credentials=None,
@@ -87,9 +87,9 @@ class TicketService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/checkin.TicketService/ValidateTicket',
-            checkin__pb2.TicketRequest.SerializeToString,
-            checkin__pb2.TicketReply.FromString,
+            '/checkin.EntryService/ValidateEntry',
+            checkin__pb2.EntryRequest.SerializeToString,
+            checkin__pb2.EntryReply.FromString,
             options,
             channel_credentials,
             insecure,

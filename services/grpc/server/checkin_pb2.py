@@ -14,17 +14,17 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcheckin.proto\x12\x07\x63heckin\"2\n\rTicketRequest\x12\x10\n\x08ticketId\x18\x01 \x01(\t\x12\x0f\n\x07\x65ventId\x18\x02 \x01(\t\"-\n\x0bTicketReply\x12\r\n\x05valid\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2O\n\rTicketService\x12>\n\x0eValidateTicket\x12\x16.checkin.TicketRequest\x1a\x14.checkin.TicketReplyb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcheckin.proto\x12\x07\x63heckin\"X\n\x0c\x45ntryRequest\x12\x11\n\tcheckinId\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x14\n\x0c\x61ttendeeName\x18\x03 \x01(\t\x12\x0f\n\x07\x65ventId\x18\x04 \x01(\t\">\n\nEntryReply\x12\x0f\n\x07\x61llowed\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0e\n\x06reason\x18\x03 \x01(\t2K\n\x0c\x45ntryService\x12;\n\rValidateEntry\x12\x15.checkin.EntryRequest\x1a\x13.checkin.EntryReplyb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'checkin_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_TICKETREQUEST']._serialized_start=26
-  _globals['_TICKETREQUEST']._serialized_end=76
-  _globals['_TICKETREPLY']._serialized_start=78
-  _globals['_TICKETREPLY']._serialized_end=123
-  _globals['_TICKETSERVICE']._serialized_start=125
-  _globals['_TICKETSERVICE']._serialized_end=204
+  _globals['_ENTRYREQUEST']._serialized_start=26
+  _globals['_ENTRYREQUEST']._serialized_end=114
+  _globals['_ENTRYREPLY']._serialized_start=116
+  _globals['_ENTRYREPLY']._serialized_end=178
+  _globals['_ENTRYSERVICE']._serialized_start=180
+  _globals['_ENTRYSERVICE']._serialized_end=255
 # @@protoc_insertion_point(module_scope)
