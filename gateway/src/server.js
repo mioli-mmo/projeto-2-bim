@@ -4,6 +4,7 @@ const cors = require("cors");
 const axios = require("axios");
 const soap = require("soap");
 const { WebSocketServer } = require("ws");
+const amqp = require("amqplib");
 
 const app = express();
 const server = http.createServer(app);
@@ -12,11 +13,14 @@ const port = process.env.PORT || 4000;
 const restEventsUrl = process.env.REST_EVENTS_URL || "http://localhost:4001";
 const restCheckinsUrl = process.env.REST_CHECKINS_URL || "http://localhost:4002";
 const soapWsdlUrl = process.env.SOAP_WSDL_URL || "http://localhost:5000/?wsdl";
+const rabbitUrl = process.env.RMQ_URL || "amqp://localhost";
+const rabbitQueue = process.env.RMQ_QUEUE || "events.created";
 
 app.use(cors());
 app.use(express.json());
 
 let soapClientPromise = null;
+let rabbitChannelPromise = null;
 
 const getSoapClient = () => {
   if (!soapClientPromise) {
@@ -30,6 +34,23 @@ const addLinks = (baseUrl, resource, links) => {
     ...resource,
     _links: links
   };
+};
+
+const getRabbitChannel = async () => {
+  if (!rabbitChannelPromise) {
+    rabbitChannelPromise = amqp
+      .connect(rabbitUrl)
+      .then((connection) => connection.createChannel())
+      .then(async (channel) => {
+        await channel.assertQueue(rabbitQueue, { durable: true });
+        return channel;
+      })
+      .catch((error) => {
+        rabbitChannelPromise = null;
+        throw error;
+      });
+  }
+  return rabbitChannelPromise;
 };
 
 const wss = new WebSocketServer({ server, path: "/ws/checkins" });
@@ -109,12 +130,23 @@ app.post("/api/events", async (req, res) => {
   try {
     const response = await axios.post(`${restEventsUrl}/events`, req.body);
     const baseUrl = `${req.protocol}://${req.get("host")}`;
-    return res.status(201).json(
-      addLinks(baseUrl, response.data, {
-        self: { href: `${baseUrl}/api/events/${response.data.id}` },
-        checkins: { href: `${baseUrl}/api/checkins?eventId=${response.data.id}` }
-      })
-    );
+    const payload = addLinks(baseUrl, response.data, {
+      self: { href: `${baseUrl}/api/events/${response.data.id}` },
+      checkins: { href: `${baseUrl}/api/checkins?eventId=${response.data.id}` }
+    });
+
+    try {
+      const channel = await getRabbitChannel();
+      channel.sendToQueue(rabbitQueue, Buffer.from(JSON.stringify(payload)), {
+        persistent: true
+      });
+    } catch (error) {
+      console.warn("rabbitmq unavailable", error.message || error);
+    }
+
+    broadcastJson({ type: "event_created", data: payload });
+
+    return res.status(201).json(payload);
   } catch (error) {
     if (error.response && error.response.status === 400) {
       return res.status(400).json({ error: "missing_fields" });

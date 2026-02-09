@@ -9,6 +9,7 @@ const selectedEventId = ref('')
 const attendeeName = ref('')
 const legacyEvent = ref(null)
 const liveAlerts = ref([])
+const eventAlerts = ref([])
 const wsStatus = ref('desconectado')
 const wsError = ref('')
 
@@ -138,6 +139,13 @@ const connectWebSocket = () => {
           { id: payload.data.id, message: alertMessage, time: payload.data.timestamp },
           ...liveAlerts.value
         ].slice(0, 8)
+      }
+      if (payload.type === 'event_created' && payload.data) {
+        const alertMessage = `Evento criado: ${payload.data.name} (${payload.data.id}).`
+        eventAlerts.value = [
+          { id: payload.data.id, message: alertMessage, time: new Date().toISOString() },
+          ...eventAlerts.value
+        ].slice(0, 6)
       }
     } catch (err) {
       wsError.value = 'Mensagem WebSocket invalida.'
@@ -285,6 +293,23 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p v-else class="muted">Aguardando alertas...</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Eventos criados</h2>
+          <p>Notificacoes em tempo real de novos eventos.</p>
+        </div>
+        <div v-if="eventAlerts.length" class="alerts">
+          <div v-for="alert in eventAlerts" :key="alert.id + '-event'" class="alert-row">
+            <div>
+              <strong>{{ alert.message }}</strong>
+              <span>{{ new Date(alert.time).toLocaleString() }}</span>
+            </div>
+            <span class="pill">evento</span>
+          </div>
+        </div>
+        <p v-else class="muted">Aguardando eventos...</p>
       </section>
     </main>
   </div>
