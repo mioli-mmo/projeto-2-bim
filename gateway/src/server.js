@@ -1,4 +1,6 @@
 const http = require("http");
+const dgram = require("dgram");
+const net = require("net");
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
@@ -15,6 +17,9 @@ const restCheckinsUrl = process.env.REST_CHECKINS_URL || "http://localhost:4002"
 const soapWsdlUrl = process.env.SOAP_WSDL_URL || "http://localhost:5000/?wsdl";
 const rabbitUrl = process.env.RMQ_URL || "amqp://localhost";
 const rabbitQueue = process.env.RMQ_QUEUE || "events.created";
+const telemetryHost = process.env.TELEMETRY_HOST || "127.0.0.1";
+const telemetryUdpPort = process.env.TELEMETRY_UDP_PORT || 7001;
+const telemetryTcpPort = process.env.TELEMETRY_TCP_PORT || 7002;
 
 app.use(cors());
 app.use(express.json());
@@ -61,6 +66,48 @@ const broadcastJson = (payload) => {
     if (client.readyState === 1) {
       client.send(message);
     }
+  });
+};
+
+const sendUdpTelemetry = (message) => {
+  return new Promise((resolve) => {
+    const client = dgram.createSocket("udp4");
+    client.send(
+      Buffer.from(message),
+      telemetryUdpPort,
+      telemetryHost,
+      (error) => {
+        if (error) {
+          console.warn("udp telemetry failed", error.message || error);
+        }
+        client.close();
+        resolve();
+      }
+    );
+  });
+};
+
+const sendTcpTelemetry = (message) => {
+  return new Promise((resolve) => {
+    const client = net.createConnection(
+      { host: telemetryHost, port: telemetryTcpPort },
+      () => {
+        client.write(message + "\n");
+      }
+    );
+
+    client.on("data", () => {
+      client.end();
+    });
+
+    client.on("error", (error) => {
+      console.warn("tcp telemetry failed", error.message || error);
+      resolve();
+    });
+
+    client.on("close", () => {
+      resolve();
+    });
   });
 };
 
@@ -186,6 +233,12 @@ app.post("/api/checkins", async (req, res) => {
       self: { href: `${baseUrl}/api/checkins?eventId=${response.data.eventId}` },
       event: { href: `${baseUrl}/api/events/${response.data.eventId}` }
     });
+    const udpMessage = `RECEBIDO CHECKIN ${response.data.eventId} ${response.data.attendeeName}`;
+    const tcpMessage = `CONFIRMADO CHECKIN ${response.data.eventId} ${response.data.attendeeName}`;
+    await Promise.all([
+      sendUdpTelemetry(udpMessage),
+      sendTcpTelemetry(tcpMessage)
+    ]);
     broadcastJson({ type: "checkin", data: payload });
     return res.status(201).json(payload);
   } catch (error) {
@@ -210,6 +263,21 @@ app.get("/api/legacy/events/:id", async (req, res) => {
   } catch (error) {
     return res.status(502).json({ error: "soap_service_unavailable" });
   }
+});
+
+app.post("/api/telemetry/tcp-udp", (req, res) => {
+  const { protocol, payload, source } = req.body || {};
+  if (!protocol || !payload) {
+    return res.status(400).json({ error: "missing_fields" });
+  }
+  const message = {
+    protocol,
+    payload,
+    source: source || "unknown",
+    timestamp: new Date().toISOString()
+  };
+  broadcastJson({ type: "tcp_udp", data: message });
+  return res.status(202).json({ status: "accepted" });
 });
 
 server.listen(port, () => {

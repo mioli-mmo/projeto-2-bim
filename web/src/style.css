@@ -327,6 +327,28 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.telemetry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #eef6ff;
+  border: 1px solid #cfe5ff;
+}
+
+.telemetry-row span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

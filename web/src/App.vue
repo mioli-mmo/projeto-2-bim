@@ -10,6 +10,7 @@ const attendeeName = ref('')
 const legacyEvent = ref(null)
 const liveAlerts = ref([])
 const eventAlerts = ref([])
+const tcpUdpLogs = ref([])
 const wsStatus = ref('desconectado')
 const wsError = ref('')
 
@@ -146,6 +147,16 @@ const connectWebSocket = () => {
           { id: payload.data.id, message: alertMessage, time: new Date().toISOString() },
           ...eventAlerts.value
         ].slice(0, 6)
+      }
+      if (payload.type === 'tcp_udp' && payload.data) {
+        const entry = {
+          id: `${payload.data.protocol}-${payload.data.timestamp}`,
+          message: payload.data.payload,
+          protocol: payload.data.protocol,
+          source: payload.data.source,
+          time: payload.data.timestamp
+        }
+        tcpUdpLogs.value = [entry, ...tcpUdpLogs.value].slice(0, 8)
       }
     } catch (err) {
       wsError.value = 'Mensagem WebSocket invalida.'
@@ -310,6 +321,23 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p v-else class="muted">Aguardando eventos...</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Telemetria TCP/UDP</h2>
+          <p>Mensagens recebidas dos leitores de QR.</p>
+        </div>
+        <div v-if="tcpUdpLogs.length" class="telemetry">
+          <div v-for="entry in tcpUdpLogs" :key="entry.id" class="telemetry-row">
+            <div>
+              <strong>{{ entry.protocol.toUpperCase() }} • {{ entry.message }}</strong>
+              <span>{{ entry.source }} • {{ new Date(entry.time).toLocaleString() }}</span>
+            </div>
+            <span class="pill">telemetria</span>
+          </div>
+        </div>
+        <p v-else class="muted">Aguardando telemetria...</p>
       </section>
     </main>
   </div>
